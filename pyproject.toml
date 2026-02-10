@@ -1,0 +1,8 @@
+[project]
+name = "netwattack"
+version = "0.1.0"
+# ... other metadata
+
+[project.scripts]
+netwattack = "netwattack.main:run_attack"
+ 
