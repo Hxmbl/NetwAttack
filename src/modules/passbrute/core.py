@@ -12,7 +12,7 @@ def passbrute():
 
     # Make mac changing simpler, using the macchanger thing from yay (pacman)
     class mac:
-        def rand(): # pyright: ignore[reportAttributeAccessIssue]
+        def rand():  # pyright: ignore[reportSelfClsParameterName]
             os.system("sudo ip link set wlan0 down")
             time.sleep(0.001)
             time.sleep(0.001)
@@ -21,21 +21,21 @@ def passbrute():
             time.sleep(0.001)
             os.system("sudo ip link set wlan0 up")
         
-        def perm():
+        def perm(): # pyright: ignore[reportSelfClsParameterName]
             os.system("sudo ip link set wlan0 down")
             time.sleep(0.001)
             os.system("sudo macchanger -p wlan0")
             time.sleep(0.001)
             os.system("sudo ip link set wlan0 up")   
         
-        def check():
+        def check(): # pyright: ignore[reportSelfClsParameterName]
             os.system("macchanger --show wlan0")
 
     class net:
-        def down():
+        def down(): # pyright: ignore[reportSelfClsParameterName]
             os.system("sudo ip link set wlan0 down")
 
-        def up():
+        def up(): # pyright: ignore[reportSelfClsParameterName]
             os.system("sudo ip link set wlan0 up")
 
 
@@ -77,6 +77,7 @@ def passbrute():
     time.sleep(1)
     print("Type path to word list (none will do random from minimum 8 characters): ")
     wordlist_path = input("Path (can be stored in src/modules/passbrute/word_lists/): ").strip()
+    # Python is very picky with paths, need a way to make it better
     
 
     with open(wordlist_path, 'r', encoding="utf-8") as f:
