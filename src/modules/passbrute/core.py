@@ -16,8 +16,8 @@ def generate_brute_force(min_length=1, max_length=8):
     """
     Generate all possible passwords using English keyboard characters.
     Includes: letters, digits, and special characters
+    All characters on an English keyboard
     """
-    # All characters on an English keyboard
     characters = string.ascii_letters + string.digits + string.punctuation
     
     for length in range(min_length, max_length + 1):
@@ -69,18 +69,16 @@ def passbrute():
     class mac:
         def rand():  # pyright: ignore[reportSelfClsParameterName]
             os.system("sudo ip link set wlan0 down")
-            time.sleep(0.001)
-            time.sleep(0.001)
+            time.sleep(0.002)
             os.system("sudo macchanger -r wlan0")
-            time.sleep(0.001)
-            time.sleep(0.001)
+            time.sleep(0.002)
             os.system("sudo ip link set wlan0 up")
         
         def perm(): # pyright: ignore[reportSelfClsParameterName]
             os.system("sudo ip link set wlan0 down")
-            time.sleep(0.001)
+            time.sleep(0.002)
             os.system("sudo macchanger -p wlan0")
-            time.sleep(0.001)
+            time.sleep(0.002)
             os.system("sudo ip link set wlan0 up")   
         
         def check(): # pyright: ignore[reportSelfClsParameterName]
@@ -178,16 +176,15 @@ def passbrute():
             # Use imap_unordered for fastest results (doesn't maintain order)
             for password, success, _ in pool.imap_unordered(check_password, args_list, chunksize=1):
                 if success:
-                    print(f"✅ Cracked! Password is: {password}")
+                    print(f"✅ Crack'd! Password is: {password}")
                     passw = password
                     pool.terminate()
                     break
                 else:
-                    print(f"❌ Tried password: {password}")
+                    print(f"❌ FUCK, Tried password: {password}")
     except KeyboardInterrupt:
         print("\nBrute force interrupted by user")
-        pool.terminate()
-        return
+        pool.terminate() 
     except Exception as e:
         print(f"Error during brute force: {e}")
         return
